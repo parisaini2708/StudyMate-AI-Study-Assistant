@@ -197,7 +197,7 @@ if (selectedFile.size > maxFileSize) {
       setCurrentFlashcard(0);
       setShowFlashcardAnswer(false);
 
-      const response = await fetch("`${API_BASE_URL}/generate`", {
+      const response = await fetch(`${API_BASE_URL}/generate`,{
         method: "POST",
         headers: {
           "Content-Type": "application/json",
