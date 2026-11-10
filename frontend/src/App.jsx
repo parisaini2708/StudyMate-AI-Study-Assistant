@@ -293,7 +293,18 @@ if (selectedFile.size > maxFileSize) {
         addHeader();
       }
     };
-
+const cleanPdfText = (text) => {
+  return String(text)
+    .replace(/\r/g, "")
+    .replace(/^\s*[-*+]\s+/gm, "- ")
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/\*\*|__/g, "")
+    .replace(/[*_`]/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+};
+body = cleanPdfText(body);
     const addSection = (heading, body) => {
       checkPageSpace(20);
 
@@ -321,7 +332,7 @@ if (selectedFile.size > maxFileSize) {
 
       y += 5;
     };
-
+text = cleanPdfText(text);
     const addPlainText = (text) => {
       const lines = pdf.splitTextToSize(text, contentWidth - 4);
 
