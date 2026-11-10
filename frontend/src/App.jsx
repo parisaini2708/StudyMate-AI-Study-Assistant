@@ -156,10 +156,10 @@ if (selectedFile.size > maxFileSize) {
     try {
       setLoading(true);
 
-      const response = await fetch("`${API_BASE_URL}/upload`", {
-        method: "POST",
-        body: formData,
-      });
+     const response = await fetch(`${API_BASE_URL}/upload`, {
+  method: "POST",
+  body: formData,
+});
 
       const data = await response.json();
 
