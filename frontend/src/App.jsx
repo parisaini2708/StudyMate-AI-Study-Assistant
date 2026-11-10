@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { jsPDF } from "jspdf";
 import "./App.css";
-
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 function App() {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -156,7 +156,7 @@ if (selectedFile.size > maxFileSize) {
     try {
       setLoading(true);
 
-      const response = await fetch("http://127.0.0.1:8000/upload", {
+      const response = await fetch("`${API_BASE_URL}/upload`", {
         method: "POST",
         body: formData,
       });
@@ -197,7 +197,7 @@ if (selectedFile.size > maxFileSize) {
       setCurrentFlashcard(0);
       setShowFlashcardAnswer(false);
 
-      const response = await fetch("http://127.0.0.1:8000/generate", {
+      const response = await fetch("`${API_BASE_URL}/generate`", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
