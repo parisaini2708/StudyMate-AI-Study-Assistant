@@ -1,7 +1,212 @@
 import { useState } from "react";
 import { jsPDF } from "jspdf";
 import "./App.css";
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
+// =========================================
+// RESULT FORMATTING HELPERS
+// =========================================
+
+const FORMATTED_TASKS = ["summary", "notes", "keypoints", "explain"];
+
+const normalizeStudyText = (input) => {
+  let text = String(input || "")
+    .replace(/\r\n?/g, "\n");
+
+  // Remove escaped Markdown characters.
+  // Example: \*\*Definition:\*\* becomes **Definition:**
+  text = text.replace(
+    /\\([\\`*_{}\[\]()#+.!|>~-])/g,
+    "$1"
+  );
+
+  // Normalize headings with four or more hash symbols.
+  text = text.replace(
+    /^#{4,}\s*/gm,
+    "### "
+  );
+
+  // Fix standalone bullet symbols.
+  // IMPORTANT: Skip blank lines between the bullet and its text.
+  const lines = text.split("\n");
+  const cleanedLines = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const current = lines[i].trim();
+
+    if (["•", "-", "*", "+"].includes(current)) {
+      let nextIndex = i + 1;
+
+      while (
+        nextIndex < lines.length &&
+        !lines[nextIndex].trim()
+      ) {
+        nextIndex++;
+      }
+
+      if (
+        nextIndex < lines.length &&
+        !["•", "-", "*", "+"].includes(
+          lines[nextIndex].trim()
+        )
+      ) {
+        cleanedLines.push(
+          "• " + lines[nextIndex].trim()
+        );
+
+        i = nextIndex;
+        continue;
+      }
+    }
+
+    cleanedLines.push(lines[i]);
+  }
+
+  text = cleanedLines.join("\n");
+
+  // Remove excessive blank lines.
+  text = text.replace(/\n{3,}/g, "\n\n");
+
+  return text.trim();
+};
+
+
+// =========================================
+// INLINE MARKDOWN RENDERER
+// =========================================
+
+const renderInlineText = (text) => {
+  const parts = String(text).split(
+    /(\*\*[\s\S]+?\*\*|\*[^*]+?\*)/g
+  );
+
+  return parts.map((part, index) => {
+    if (
+      part.startsWith("**") &&
+      part.endsWith("**") &&
+      part.length > 4
+    ) {
+      return (
+        <strong key={index}>
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+
+    if (
+      part.startsWith("*") &&
+      part.endsWith("*") &&
+      part.length > 2
+    ) {
+      return (
+        <em key={index}>
+          {part.slice(1, -1)}
+        </em>
+      );
+    }
+
+    return part;
+  });
+};
+
+
+// =========================================
+// FORMATTED RESULT RENDERER
+// =========================================
+
+const FormattedResult = ({ text }) => {
+  const normalizedText = normalizeStudyText(text);
+  const lines = normalizedText.split("\n");
+
+  return (
+    <>
+      {lines.map((line, index) => {
+        const trimmedLine = line.trim();
+
+        if (!trimmedLine) {
+          return (
+            <div
+              className="result-spacer"
+              key={index}
+            />
+          );
+        }
+
+        // Markdown headings
+        if (/^#{1,3}\s/.test(trimmedLine)) {
+          const heading = trimmedLine.replace(
+            /^#{1,3}\s*/,
+            ""
+          );
+
+          return (
+            <h3 key={index}>
+              {renderInlineText(heading)}
+            </h3>
+          );
+        }
+
+        // Bold standalone headings
+        if (/^\*\*.*\*\*$/.test(trimmedLine)) {
+          return (
+            <h3 key={index}>
+              {renderInlineText(trimmedLine)}
+            </h3>
+          );
+        }
+
+        // Bullet points
+        if (/^[-•*+]\s+/.test(trimmedLine)) {
+          const bulletText = trimmedLine.replace(
+            /^[-•*+]\s+/,
+            ""
+          );
+
+          return (
+            <div
+              className="result-bullet"
+              key={index}
+            >
+              <span>•</span>
+
+              <p>
+                {renderInlineText(bulletText)}
+              </p>
+            </div>
+          );
+        }
+
+        // Numbered points
+        if (/^\d+[\.)]\s+/.test(trimmedLine)) {
+          const numberMatch = trimmedLine.match(
+            /^(\d+[\.)])\s+([\s\S]*)$/
+          );
+
+          return (
+            <p
+              className="result-numbered"
+              key={index}
+            >
+              <strong>{numberMatch[1]}</strong>{" "}
+              {renderInlineText(numberMatch[2])}
+            </p>
+          );
+        }
+
+        // Normal paragraphs
+        return (
+          <p key={index}>
+            {renderInlineText(trimmedLine)}
+          </p>
+        );
+      })}
+    </>
+  );
+};
+
+
 function App() {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -123,14 +328,14 @@ function App() {
     if (!selectedFile) return;
 
     const validExtensions = [".pdf", ".docx"];
-const fileName = selectedFile.name.toLowerCase();
-const maxFileSize = 15 * 1024 * 1024;
+    const fileName = selectedFile.name.toLowerCase();
+    const maxFileSize = 15 * 1024 * 1024;
 
-if (selectedFile.size > maxFileSize) {
-  alert("File size must not exceed 15 MB.");
-  event.target.value = "";
-  return;
-}
+    if (selectedFile.size > maxFileSize) {
+      alert("File size must not exceed 15 MB.");
+      event.target.value = "";
+      return;
+    }
 
     if (!validExtensions.some((extension) => fileName.endsWith(extension))) {
       alert("Please upload only PDF or DOCX files.");
@@ -156,10 +361,10 @@ if (selectedFile.size > maxFileSize) {
     try {
       setLoading(true);
 
-     const response = await fetch(`${API_BASE_URL}/upload`, {
-  method: "POST",
-  body: formData,
-});
+      const response = await fetch(`${API_BASE_URL}/upload`, {
+        method: "POST",
+        body: formData,
+      });
 
       const data = await response.json();
 
@@ -197,7 +402,7 @@ if (selectedFile.size > maxFileSize) {
       setCurrentFlashcard(0);
       setShowFlashcardAnswer(false);
 
-      const response = await fetch(`${API_BASE_URL}/generate`,{
+      const response = await fetch(`${API_BASE_URL}/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -223,7 +428,12 @@ if (selectedFile.size > maxFileSize) {
     }
   };
 
-    const handleDownloadPDF = () => {
+
+  // =========================================
+  // PDF DOWNLOAD
+  // =========================================
+
+  const handleDownloadPDF = () => {
     if (!result) {
       alert("There is no result to download.");
       return;
@@ -241,8 +451,13 @@ if (selectedFile.size > maxFileSize) {
 
       let y = 35;
 
+      const pdfContent = FORMATTED_TASKS.includes(activeTask)
+        ? normalizeStudyText(result)
+        : result;
+
       const cleanPdfText = (text) => {
         return String(text)
+          .replace(/\\([\\`*_{}\[\]()#+.!|>~-])/g, "$1")
           .replace(/\r/g, "")
           .replace(/\*\*/g, "")
           .replace(/__/g, "")
@@ -320,19 +535,23 @@ if (selectedFile.size > maxFileSize) {
         pdf.setFontSize(11);
         pdf.setTextColor(92, 48, 135);
 
-        pdf.text(heading, margin + 3, y + 1);
+        pdf.text(
+          cleanPdfText(heading),
+          margin + 3,
+          y
+        );
 
         y += 12;
       };
 
-      const addPlainText = (text) => {
+      const addPlainText = (text, indentation = 2) => {
         const cleanedText = cleanPdfText(text);
 
         if (!cleanedText) return;
 
         const lines = pdf.splitTextToSize(
           cleanedText,
-          contentWidth - 4
+          contentWidth - indentation - 2
         );
 
         lines.forEach((line) => {
@@ -342,7 +561,7 @@ if (selectedFile.size > maxFileSize) {
           pdf.setFontSize(10);
           pdf.setTextColor(48, 43, 55);
 
-          pdf.text(line, margin + 2, y);
+          pdf.text(line, margin + indentation, y);
 
           y += 5.5;
         });
@@ -374,7 +593,7 @@ if (selectedFile.size > maxFileSize) {
       y += 12;
 
       // Process generated content
-      const contentLines = result.split("\n");
+      const contentLines = pdfContent.split("\n");
 
       contentLines.forEach((line) => {
         const trimmedLine = line.trim();
@@ -385,9 +604,9 @@ if (selectedFile.size > maxFileSize) {
         }
 
         // Markdown headings
-        if (/^#{1,3}\s/.test(trimmedLine)) {
+        if (/^#{1,6}\s/.test(trimmedLine)) {
           const heading = cleanPdfText(
-            trimmedLine.replace(/^#{1,3}\s*/, "")
+            trimmedLine.replace(/^#{1,6}\s*/, "")
           );
 
           addSection(heading);
@@ -409,7 +628,7 @@ if (selectedFile.size > maxFileSize) {
         }
 
         // Bullet points
-        if (/^[-•*+]\s/.test(trimmedLine)) {
+        if (/^[-•*+]\s+/.test(trimmedLine)) {
           checkPageSpace(8);
 
           pdf.setFont("helvetica", "normal");
@@ -418,14 +637,17 @@ if (selectedFile.size > maxFileSize) {
 
           pdf.text("•", margin + 2, y);
 
-          addPlainText(trimmedLine.replace(/^[-•*+]\s*/, ""));
+          addPlainText(
+            trimmedLine.replace(/^[-•*+]\s+/, ""),
+            7
+          );
 
           y += 1;
           return;
         }
 
         // Numbered points
-        if (/^\d+[\.)]\s/.test(trimmedLine)) {
+        if (/^\d+[\.)]\s+/.test(trimmedLine)) {
           addPlainText(trimmedLine);
           return;
         }
@@ -453,6 +675,11 @@ if (selectedFile.size > maxFileSize) {
     }
   };
 
+
+  // =========================================
+  // FLASHCARD FUNCTIONS
+  // =========================================
+
   const flashcards = parseFlashcards(result);
 
   const handleNextFlashcard = () => {
@@ -479,6 +706,11 @@ if (selectedFile.size > maxFileSize) {
     navigateTo("dashboard");
   };
 
+
+  // =========================================
+  // MAIN USER INTERFACE
+  // =========================================
+
   return (
     <div
       className={`app-shell ${mobileMenuOpen ? "menu-open" : ""} ${
@@ -496,8 +728,6 @@ if (selectedFile.size > maxFileSize) {
       <aside
         className={`sidebar ${mobileMenuOpen ? "mobile-expanded" : ""}`}
       >
-        {/* MOBILE HAMBURGER - NOW INSIDE SIDEBAR */}
-
         <div className="sidebar-mobile-header">
           <button
             type="button"
@@ -665,6 +895,7 @@ if (selectedFile.size > maxFileSize) {
         </header>
 
         <div className="page-content">
+
           {/* DASHBOARD */}
 
           <section id="dashboard" className="dashboard-section">
@@ -818,6 +1049,7 @@ if (selectedFile.size > maxFileSize) {
               ))}
             </div>
           </section>
+
 
           {/* UPLOAD MATERIAL */}
 
@@ -973,6 +1205,7 @@ if (selectedFile.size > maxFileSize) {
             )}
           </section>
 
+
           {/* AI STUDY TOOLS */}
 
           <section id="tools" className="content-section">
@@ -1053,6 +1286,7 @@ if (selectedFile.size > maxFileSize) {
               </div>
             )}
           </section>
+
 
           {/* GENERATED RESULTS */}
 
@@ -1166,62 +1400,66 @@ if (selectedFile.size > maxFileSize) {
                   </div>
                 ) : (
                   <div className="result-content">
-                    {result.split("\n").map((line, index) => {
-                      const trimmedLine = line.trim();
+                    {FORMATTED_TASKS.includes(activeTask) ? (
+                      <FormattedResult text={result} />
+                    ) : (
+                      result.split("\n").map((line, index) => {
+                        const trimmedLine = line.trim();
 
-                      if (!trimmedLine) {
-                        return (
-                          <div
-                            className="result-spacer"
-                            key={index}
-                          />
-                        );
-                      }
+                        if (!trimmedLine) {
+                          return (
+                            <div
+                              className="result-spacer"
+                              key={index}
+                            />
+                          );
+                        }
 
-                      if (/^#{1,3}\s/.test(trimmedLine)) {
-                        return (
-                          <h3 key={index}>
-                            {trimmedLine.replace(/^#{1,3}\s*/, "")}
-                          </h3>
-                        );
-                      }
+                        if (/^#{1,3}\s/.test(trimmedLine)) {
+                          return (
+                            <h3 key={index}>
+                              {trimmedLine.replace(/^#{1,3}\s*/, "")}
+                            </h3>
+                          );
+                        }
 
-                      if (/^\*\*.*\*\*$/.test(trimmedLine)) {
-                        return (
-                          <h3 key={index}>
-                            {trimmedLine.replace(/\*\*/g, "")}
-                          </h3>
-                        );
-                      }
+                        if (/^\*\*.*\*\*$/.test(trimmedLine)) {
+                          return (
+                            <h3 key={index}>
+                              {trimmedLine.replace(/\*\*/g, "")}
+                            </h3>
+                          );
+                        }
 
-                      if (/^[-•*]\s/.test(trimmedLine)) {
-                        return (
-                          <div
-                            className="result-bullet"
-                            key={index}
-                          >
-                            <span>•</span>
+                        if (/^[-•*]\s/.test(trimmedLine)) {
+                          return (
+                            <div
+                              className="result-bullet"
+                              key={index}
+                            >
+                              <span>•</span>
 
-                            <p>
-                              {trimmedLine.replace(/^[-•*]\s*/, "")}
+                              <p>
+                                {trimmedLine.replace(/^[-•*]\s*/, "")}
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        if (/^\d+[\.)]\s/.test(trimmedLine)) {
+                          return (
+                            <p
+                              className="result-numbered"
+                              key={index}
+                            >
+                              {trimmedLine}
                             </p>
-                          </div>
-                        );
-                      }
+                          );
+                        }
 
-                      if (/^\d+[\.)]\s/.test(trimmedLine)) {
-                        return (
-                          <p
-                            className="result-numbered"
-                            key={index}
-                          >
-                            {trimmedLine}
-                          </p>
-                        );
-                      }
-
-                      return <p key={index}>{trimmedLine}</p>;
-                    })}
+                        return <p key={index}>{trimmedLine}</p>;
+                      })
+                    )}
                   </div>
                 )}
 
@@ -1269,6 +1507,7 @@ if (selectedFile.size > maxFileSize) {
               </div>
             )}
           </section>
+
 
           {/* ABOUT STUDYMATE */}
 
@@ -1342,10 +1581,10 @@ if (selectedFile.size > maxFileSize) {
         </div>
       </main>
 
+
       {/* MOBILE RESPONSIVE STYLES */}
 
       <style>{`
-        /* Hide mobile hamburger on desktop */
         .sidebar-mobile-header {
           display: none;
         }
@@ -1355,8 +1594,6 @@ if (selectedFile.size > maxFileSize) {
         }
 
         @media (max-width: 800px) {
-
-          /* SIDEBAR */
 
           .sidebar {
             position: fixed !important;
@@ -1378,8 +1615,6 @@ if (selectedFile.size > maxFileSize) {
             min-width: min(270px, 82vw) !important;
             box-shadow: 15px 0 45px rgba(30, 20, 45, 0.25) !important;
           }
-
-          /* HAMBURGER INSIDE SIDEBAR */
 
           .sidebar-mobile-header {
             display: flex !important;
@@ -1426,8 +1661,6 @@ if (selectedFile.size > maxFileSize) {
             background: #d2adff !important;
           }
 
-          /* SIDEBAR COLLAPSED CONTENT */
-
           .sidebar .brand-text,
           .sidebar .sidebar-heading,
           .sidebar .nav-item span:not(.nav-icon),
@@ -1452,8 +1685,6 @@ if (selectedFile.size > maxFileSize) {
           .sidebar .sidebar-footer {
             justify-content: center !important;
           }
-
-          /* SIDEBAR EXPANDED CONTENT */
 
           .sidebar.mobile-expanded .brand-text,
           .sidebar.mobile-expanded .nav-item span:not(.nav-icon),
@@ -1483,8 +1714,6 @@ if (selectedFile.size > maxFileSize) {
             justify-content: flex-start !important;
           }
 
-          /* OVERLAY */
-
           .mobile-sidebar-overlay {
             display: block !important;
             position: fixed !important;
@@ -1497,15 +1726,11 @@ if (selectedFile.size > maxFileSize) {
             cursor: pointer !important;
           }
 
-          /* MAIN CONTENT */
-
           .main-content {
             margin-left: 75px !important;
             width: calc(100% - 75px) !important;
             min-width: 0 !important;
           }
-
-          /* TOPBAR */
 
           .topbar {
             display: flex !important;
@@ -1572,16 +1797,12 @@ if (selectedFile.size > maxFileSize) {
             white-space: nowrap !important;
           }
 
-          /* PAGE CONTENT */
-
           .page-content {
             min-width: 0 !important;
             padding-left: 16px !important;
             padding-right: 16px !important;
           }
         }
-
-        /* SMALL MOBILE SCREENS */
 
         @media (max-width: 480px) {
 
@@ -1636,13 +1857,7 @@ if (selectedFile.size > maxFileSize) {
           }
         }
 
-        /* =========================================
-           FINAL MOBILE SIDEBAR FIXES
-        ========================================= */
-
         @media (max-width: 800px) {
-
-          /* HAMBURGER: ABSOLUTE LEFT EDGE */
 
           .sidebar.mobile-expanded .sidebar-mobile-header {
             display: flex !important;
@@ -1660,8 +1875,6 @@ if (selectedFile.size > maxFileSize) {
             margin: 0 !important;
             align-self: flex-start !important;
           }
-
-          /* BRAND: PREVENT TEXT OVERLAPPING */
 
           .sidebar.mobile-expanded .sidebar-brand {
             display: flex !important;
@@ -1689,8 +1902,6 @@ if (selectedFile.size > maxFileSize) {
             white-space: normal !important;
             overflow-wrap: break-word !important;
           }
-
-          /* FOOTER: PREVENT TEXT OVERLAPPING */
 
           .sidebar.mobile-expanded .sidebar-footer {
             display: flex !important;
