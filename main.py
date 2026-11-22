@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import logging
 
 import fitz
@@ -25,7 +26,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-MAX_FILE_SIZE = 15 * 1024 * 1024  # 15 MB
+MAX_FILE_SIZE = 15 * 1024 * 1024
 MAX_TEXT_LENGTH = 30000
 
 logging.basicConfig(level=logging.INFO)
@@ -204,8 +205,6 @@ async def upload_document(file: UploadFile = File(...)):
 
     try:
 
-        # Read only enough data to enforce the size limit.
-
         content = await file.read(MAX_FILE_SIZE + 1)
 
         if not content:
@@ -222,13 +221,9 @@ async def upload_document(file: UploadFile = File(...)):
                 detail="File size exceeds the 15 MB limit."
             )
 
-        # PDF PROCESSING
-
         if filename.endswith(".pdf"):
 
             text = extract_pdf_text(content)
-
-        # DOCX PROCESSING
 
         else:
 
@@ -281,25 +276,156 @@ class GenerateRequest(BaseModel):
 
 
 # =========================================
+# AI OUTPUT FORMATTING CLEANER
+# =========================================
+
+def clean_ai_formatting(text):
+
+    # Normalize line endings
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Remove unnecessary backslashes before Markdown characters.
+    # Example: \*\*Definition:\*\* becomes **Definition:**
+    text = re.sub(
+        r'\\([\\`*_{}\[\]()#+.!|>~-])',
+        r'\1',
+        text
+    )
+
+    # Normalize headings containing four or more hash symbols.
+    text = re.sub(
+        r'^#{4,}\s*',
+        '### ',
+        text,
+        flags=re.MULTILINE
+    )
+
+    # Fix standalone bullet symbols, including cases where
+    # blank lines appear between the bullet and its text.
+    lines = text.split("\n")
+
+    cleaned_lines = []
+
+    i = 0
+
+    while i < len(lines):
+
+        current = lines[i].strip()
+
+        if current in ["•", "-", "*", "+"]:
+
+            next_index = i + 1
+
+            # Skip empty lines after the bullet symbol
+            while (
+                next_index < len(lines)
+                and not lines[next_index].strip()
+            ):
+
+                next_index += 1
+
+            if next_index < len(lines):
+
+                next_text = lines[next_index].strip()
+
+                cleaned_lines.append("• " + next_text)
+
+                i = next_index + 1
+
+                continue
+
+        cleaned_lines.append(lines[i])
+
+        i += 1
+
+    text = "\n".join(cleaned_lines)
+
+    # Remove excessive blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
+
+
+# =========================================
 # AI PROMPTS
 # =========================================
 
 PROMPTS = {
 
-    "summary": (
-        "Create a clear and easy-to-understand summary of this "
-        "study material. Include the main ideas and important information."
-    ),
+    "summary": """Create a clear, well-structured and easy-to-understand summary of the provided study material.
 
-    "notes": (
-        "Convert this study material into well-organized short notes "
-        "with headings and bullet points. Use simple language."
-    ),
+FORMATTING REQUIREMENTS:
 
-    "keypoints": (
-        "Extract the most important key points from this study material. "
-        "Present them as numbered bullet points."
-    ),
+- Start with a suitable title.
+- Use clear section headings.
+- Write complete, meaningful sentences in paragraphs.
+- Use bullet points only when listing information.
+- Use bold formatting for important terms and definitions.
+- Avoid unnecessary headings and excessive bullet points.
+- Keep the information organized and easy to revise.
+
+IMPORTANT OUTPUT RULES:
+
+- Write normal Markdown without escaping its characters.
+- Never write backslashes before asterisks or heading symbols.
+- Never put a bullet symbol on a separate line.
+- Always write a bullet and its text on the same line.
+- Use #, ## or ### for headings.
+- Do not use more than three hash symbols for headings.
+- Do not put a heading symbol on a separate line.
+- Do not wrap the entire response in a code block.
+
+Base the summary strictly on the provided material.""",
+
+    "notes": """Convert the provided study material into organized, exam-friendly short notes.
+
+FORMATTING REQUIREMENTS:
+
+- Start with a suitable title.
+- Divide the notes into logical topics using clear headings.
+- Write definitions as complete sentences.
+- Use bold formatting for important terms.
+- Use bullet points for lists, features, advantages, disadvantages and examples.
+- Keep related information together.
+- Avoid unnecessary one-line headings.
+- Make the notes easy to read and revise.
+
+IMPORTANT OUTPUT RULES:
+
+- Write normal Markdown without escaping its characters.
+- Never write backslashes before asterisks or heading symbols.
+- Never put a bullet symbol on a separate line.
+- Always write a bullet and its text on the same line.
+- Use #, ## or ### for headings.
+- Do not use more than three hash symbols for headings.
+- Do not put a heading symbol on a separate line.
+- Do not wrap the entire response in a code block.
+
+Base the notes strictly on the provided material.""",
+
+    "keypoints": """Extract the most important key points from the provided study material.
+
+FORMATTING REQUIREMENTS:
+
+- Start with a suitable title.
+- Organize the points under relevant topic headings.
+- Present important information as clearly numbered points.
+- Write complete and meaningful sentences.
+- Highlight important technical terms using bold formatting.
+- Include important facts, definitions and concepts.
+- Avoid repeating the same information.
+
+IMPORTANT OUTPUT RULES:
+
+- Write normal Markdown without escaping its characters.
+- Never write backslashes before asterisks or heading symbols.
+- Use normal numbered points such as 1. Point.
+- Use #, ## or ### for headings.
+- Do not use more than three hash symbols for headings.
+- Do not put a heading symbol on a separate line.
+- Do not wrap the entire response in a code block.
+
+Base the key points strictly on the provided material.""",
 
     "quiz": """Create 10 multiple-choice questions (MCQs) based strictly on the provided study material.
 
@@ -347,18 +473,30 @@ Use simple language, cover different topics, avoid duplicate questions, and do n
 
     "explain": """Explain the provided study material in very simple, beginner-friendly language.
 
-Follow these instructions:
+FORMATTING REQUIREMENTS:
 
-1. Explain difficult concepts step by step.
-2. Use simple words and short sentences.
-3. Include relatable, everyday examples wherever useful.
-4. Explain technical terms in easy language.
-5. Break complicated topics into smaller sections.
-6. Use headings and bullet points for readability.
-7. Include important definitions.
-8. Highlight the most important things students should remember.
+- Start with a suitable title.
+- Divide the explanation into logical sections with clear headings.
+- Explain difficult concepts step by step.
+- Use simple words and short sentences.
+- Write definitions as complete sentences.
+- Include relatable, everyday examples wherever useful.
+- Explain technical terms in easy language.
+- Use bullet points only when listing information.
+- Highlight important terms using bold formatting.
+- Include the most important things students should remember.
+- Keep the explanation detailed enough to understand the topic properly.
 
-Make the explanation detailed enough to understand the topic properly, but avoid unnecessary complexity.
+IMPORTANT OUTPUT RULES:
+
+- Write normal Markdown without escaping its characters.
+- Never write backslashes before asterisks or heading symbols.
+- Never put a bullet symbol on a separate line.
+- Always write a bullet and its text on the same line.
+- Use #, ## or ### for headings.
+- Do not use more than three hash symbols for headings.
+- Do not put a heading symbol on a separate line.
+- Do not wrap the entire response in a code block.
 
 Base the explanation strictly on the provided document. Do not invent facts."""
 
@@ -434,6 +572,20 @@ def generate_content(request: GenerateRequest):
                 detail="AI did not generate a response. Please try again."
             )
 
+        result = response.text
+
+        # Clean only the four affected tools.
+        # Quiz and Flashcards remain unchanged.
+
+        if request.task in [
+            "summary",
+            "notes",
+            "keypoints",
+            "explain"
+        ]:
+
+            result = clean_ai_formatting(result)
+
         logger.info(
             "AI content generated successfully for task: %s",
             request.task
@@ -441,7 +593,7 @@ def generate_content(request: GenerateRequest):
 
         return {
             "task": request.task,
-            "result": response.text
+            "result": result
         }
 
     except HTTPException:
