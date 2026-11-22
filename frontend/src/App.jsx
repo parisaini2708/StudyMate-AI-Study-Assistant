@@ -223,176 +223,234 @@ if (selectedFile.size > maxFileSize) {
     }
   };
 
-  const handleDownloadPDF = () => {
+    const handleDownloadPDF = () => {
     if (!result) {
       alert("There is no result to download.");
       return;
     }
 
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 18;
-    const contentWidth = pageWidth - margin * 2;
-    const title = getTaskTitle(activeTask);
+    try {
+      const pdf = new jsPDF("p", "mm", "a4");
 
-    let y = 20;
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
 
-    const addHeader = () => {
-      pdf.setFillColor(82, 42, 125);
-      pdf.rect(0, 0, pageWidth, 32, "F");
+      const margin = 18;
+      const contentWidth = pageWidth - margin * 2;
+      const title = getTaskTitle(activeTask);
 
-      pdf.setTextColor(255, 255, 255);
+      let y = 35;
+
+      const cleanPdfText = (text) => {
+        return String(text)
+          .replace(/\r/g, "")
+          .replace(/\*\*/g, "")
+          .replace(/__/g, "")
+          .replace(/[*_`]/g, "")
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+          .trim();
+      };
+
+      const addHeader = () => {
+        pdf.setFillColor(92, 48, 135);
+        pdf.rect(0, 0, pageWidth, 15, "F");
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(10);
+        pdf.setTextColor(255, 255, 255);
+
+        pdf.text("StudyMate | AI Study Assistant", margin, 10);
+      };
+
+      const addFooter = () => {
+        const pageNumber = pdf.internal.getNumberOfPages();
+
+        pdf.setDrawColor(220, 214, 228);
+
+        pdf.line(
+          margin,
+          pageHeight - 15,
+          pageWidth - margin,
+          pageHeight - 15
+        );
+
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+        pdf.setTextColor(130, 120, 140);
+
+        pdf.text(
+          "Generated using StudyMate AI Study Assistant",
+          margin,
+          pageHeight - 9
+        );
+
+        pdf.text(
+          `Page ${pageNumber}`,
+          pageWidth - margin,
+          pageHeight - 9,
+          { align: "right" }
+        );
+      };
+
+      const checkPageSpace = (requiredSpace = 8) => {
+        if (y + requiredSpace > pageHeight - 23) {
+          addFooter();
+          pdf.addPage();
+          addHeader();
+          y = 25;
+        }
+      };
+
+      const addSection = (heading) => {
+        checkPageSpace(18);
+
+        pdf.setFillColor(245, 239, 251);
+
+        pdf.roundedRect(
+          margin,
+          y - 5,
+          contentWidth,
+          10,
+          2,
+          2,
+          "F"
+        );
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(11);
+        pdf.setTextColor(92, 48, 135);
+
+        pdf.text(heading, margin + 3, y + 1);
+
+        y += 12;
+      };
+
+      const addPlainText = (text) => {
+        const cleanedText = cleanPdfText(text);
+
+        if (!cleanedText) return;
+
+        const lines = pdf.splitTextToSize(
+          cleanedText,
+          contentWidth - 4
+        );
+
+        lines.forEach((line) => {
+          checkPageSpace(7);
+
+          pdf.setFont("helvetica", "normal");
+          pdf.setFontSize(10);
+          pdf.setTextColor(48, 43, 55);
+
+          pdf.text(line, margin + 2, y);
+
+          y += 5.5;
+        });
+      };
+
+      // First page header
+      addHeader();
+
+      // Document title
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(19);
-      pdf.text("StudyMate", margin, 14);
+      pdf.setFontSize(16);
+      pdf.setTextColor(45, 35, 60);
 
+      pdf.text(title, margin, y);
+
+      y += 10;
+
+      // Generation date
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(9);
-      pdf.text("AI Study Assistant", margin, 22);
-
-      pdf.setFontSize(9);
-      pdf.text(title, pageWidth - margin, 22, {
-        align: "right",
-      });
-
-      pdf.setTextColor(45, 38, 55);
-      y = 43;
-    };
-
-    const addFooter = () => {
-      const pageNumber = pdf.internal.getNumberOfPages();
-
-      pdf.setDrawColor(220, 214, 228);
-      pdf.line(
-        margin,
-        pageHeight - 15,
-        pageWidth - margin,
-        pageHeight - 15
-      );
-
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(8);
       pdf.setTextColor(130, 120, 140);
 
       pdf.text(
-        "Generated using StudyMate AI Study Assistant",
+        `Generated on ${new Date().toLocaleDateString()}`,
         margin,
-        pageHeight - 9
+        y
       );
-
-      pdf.text(`Page ${pageNumber}`, pageWidth - margin, pageHeight - 9, {
-        align: "right",
-      });
-    };
-
-    const checkPageSpace = (requiredSpace = 12) => {
-      if (y + requiredSpace > pageHeight - 23) {
-        addFooter();
-        pdf.addPage();
-        addHeader();
-      }
-    };
-const cleanPdfText = (text) => {
-  return String(text)
-    .replace(/\r/g, "")
-    .replace(/^\s*[-*+]\s+/gm, "- ")
-    .replace(/^\s*#{1,6}\s*/gm, "")
-    .replace(/\*\*|__/g, "")
-    .replace(/[*_`]/g, "")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[ \t]+/g, " ")
-    .trim();
-};
-body = cleanPdfText(body);
-    const addSection = (heading, body) => {
-      checkPageSpace(20);
-
-      pdf.setFillColor(245, 239, 251);
-      pdf.roundedRect(margin, y - 5, contentWidth, 10, 2, 2, "F");
-
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(11);
-      pdf.setTextColor(92, 48, 135);
-      pdf.text(heading, margin + 3, y + 1);
 
       y += 12;
 
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      pdf.setTextColor(48, 43, 55);
+      // Process generated content
+      const contentLines = result.split("\n");
 
-      const lines = pdf.splitTextToSize(body, contentWidth - 4);
+      contentLines.forEach((line) => {
+        const trimmedLine = line.trim();
 
-      lines.forEach((line) => {
-        checkPageSpace(6);
-        pdf.text(line, margin + 2, y);
-        y += 5.5;
+        if (!trimmedLine) {
+          y += 3;
+          return;
+        }
+
+        // Markdown headings
+        if (/^#{1,3}\s/.test(trimmedLine)) {
+          const heading = cleanPdfText(
+            trimmedLine.replace(/^#{1,3}\s*/, "")
+          );
+
+          addSection(heading);
+          return;
+        }
+
+        // Bold standalone headings
+        if (/^\*\*.*\*\*$/.test(trimmedLine)) {
+          const heading = cleanPdfText(trimmedLine);
+
+          addSection(heading);
+          return;
+        }
+
+        // Uppercase headings
+        if (/^[A-Z][A-Z\s]{2,}:$/.test(trimmedLine)) {
+          addSection(trimmedLine.replace(/:$/, ""));
+          return;
+        }
+
+        // Bullet points
+        if (/^[-•*+]\s/.test(trimmedLine)) {
+          checkPageSpace(8);
+
+          pdf.setFont("helvetica", "normal");
+          pdf.setFontSize(10);
+          pdf.setTextColor(92, 48, 135);
+
+          pdf.text("•", margin + 2, y);
+
+          addPlainText(trimmedLine.replace(/^[-•*+]\s*/, ""));
+
+          y += 1;
+          return;
+        }
+
+        // Numbered points
+        if (/^\d+[\.)]\s/.test(trimmedLine)) {
+          addPlainText(trimmedLine);
+          return;
+        }
+
+        // Normal paragraph
+        addPlainText(trimmedLine);
       });
 
-      y += 5;
-    };
-text = cleanPdfText(text);
-    const addPlainText = (text) => {
-      const lines = pdf.splitTextToSize(text, contentWidth - 4);
+      // Footer on final page
+      addFooter();
 
-      lines.forEach((line) => {
-        checkPageSpace(6);
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(10);
-        pdf.setTextColor(48, 43, 55);
-        pdf.text(line, margin + 2, y);
-        y += 5.5;
-      });
-    };
+      // Download PDF
+      const safeFileName = title
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase();
 
-    addHeader();
+      pdf.save(`StudyMate_${safeFileName}.pdf`);
 
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(16);
-    pdf.setTextColor(45, 35, 60);
-    pdf.text(title, margin, y);
-    y += 10;
+    } catch (error) {
+      console.error("PDF download error:", error);
 
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(9);
-    pdf.setTextColor(130, 120, 140);
-    pdf.text(`Generated on ${new Date().toLocaleDateString()}`, margin, y);
-    y += 12;
-
-    const sections = result.split(
-      /\n(?=(?:#{1,3}\s|[A-Z][A-Z\s]{2,}:))/
-    );
-
-    sections.forEach((section) => {
-      const trimmed = section.trim();
-
-      if (!trimmed) return;
-
-      const lines = trimmed.split("\n");
-      const firstLine = lines[0].replace(/^#{1,3}\s*/, "").trim();
-      const remainingText = lines.slice(1).join("\n").trim();
-
-      const isHeading =
-        lines.length > 1 &&
-        (section.startsWith("#") ||
-          /^[A-Z][A-Z\s]{2,}:$/.test(firstLine));
-
-      if (isHeading) {
-        addSection(firstLine.replace(/:$/, ""), remainingText);
-      } else {
-        addPlainText(trimmed);
-        y += 5;
-      }
-    });
-
-    addFooter();
-
-    const safeFileName = title
-      .replace(/[^a-z0-9]/gi, "_")
-      .toLowerCase();
-
-    pdf.save(`StudyMate_${safeFileName}.pdf`);
+      alert(
+        "Unable to generate the PDF. Please check the browser console for details."
+      );
+    }
   };
 
   const flashcards = parseFlashcards(result);
